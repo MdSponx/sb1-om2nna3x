@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.web_role == 'admin'
+      );
+    }
+    
+     function isEditor() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.web_role == 'editor';
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Movies collection
+    match /movies/{movieId} {
+      allow read, list: if true;
+      allow write: if isAdmin() || isEditor();  // เพิ่ม isEditor()
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() && (
+        request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['member_status', 'payment_status', 'verification_status', 'updated_at', 'updated_by', 'web_role'])
+      ) || isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+    
+    // Committee collection
+    match /comittee/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Directors collection
+    match /directors/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
